@@ -51,4 +51,4 @@ Python is amazing!
 
 Hope this helps someone!
 
-Happy tickering!
+Happy tinkering!
