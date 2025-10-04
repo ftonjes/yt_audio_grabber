@@ -10,8 +10,6 @@ import subprocess as sp
 import os
 from pytubefix import YouTube
 from mutagen.mp4 import MP4, MP4Cover
-from io import BytesIO
-from pprint import pprint
 
 requests.packages.urllib3.disable_warnings()
 
@@ -46,7 +44,7 @@ def extract_audio(original_file, file_to_write, start_position=0, end_position=1
 list_file = '/Volumes/Data/Projects/yt_audio_grabber/playlist.txt'  # Text file containing one YouTube URL per line
 audio_save_location = '/Volumes/Data/Projects/yt_audio_grabber/music/'   # Location where to save the processed tracks
 image_save_location = '/Volumes/Data/Projects/yt_audio_grabber/artwork/'   # Location where to save the downloaded album artwork
-keep_compilation_track = True
+keep_compilation_track = False
 
 # Check if save locations exist and create if required:
 if not os.path.exists(audio_save_location):
@@ -81,14 +79,22 @@ for video in videos:
             tmp = re.search(
                 r'{"playerOverlayVideoDetailsRenderer":{"title":{"simpleText":"(.*?)"},"subtitle"', wp.text)
             if tmp:
-                print(f"Video title: '{tmp.group(1)}'")
-                name = tmp.group(1).strip()
+                name = tmp.group(1).strip().replace('|', '-').replace('｜', '-').replace(
+                    ':', '').replace('\\u0026', '&')
+                print(f"Video title: '{name}'")
 
         # Get Thumbnail image URL
         thumbnail_url = False
         tmp = re.search(r'"thumbnailUrl":"(https://.*?maxres.*?)"', wp.text)
         if tmp:
             thumbnail_url = tmp.group(1)
+        else:
+            tmp2 = re.search(r'itemprop="thumbnailUrl" href="(https://.*?maxres.*?)">', wp.text)
+            if tmp2:
+                thumbnail_url = tmp2.group(1)
+
+        if not thumbnail_url:
+            print(f"  Unable to find thumbnail for '{name}'")
 
         # Clean the name so it looks cleaner (including phrases or single characters)
         clean = [
@@ -224,7 +230,10 @@ for video in videos:
                 MP4File.tags['cpil'] = True
                 MP4File.tags['pgap'] = True
                 MP4File.save(audio_to_write)
-                print(f"Created track {int(item['number'])} of {len(playlist)}: '{audio_to_write}'.")
+                print(f"  Created track {int(item['number'])} of {len(playlist)}: '{audio_to_write}'.")
+
+            if not keep_compilation_track:
+                os.remove(output_file)
 
         else:
 
@@ -242,12 +251,14 @@ for video in videos:
 
             os.system(cmd_to_run)
 
+            # If we don't find album art, use the thumbnail from youtube instead
             if os.path.isfile(f"{image_save_location}{name}.jpg"):
-                print('Found it')
+                pass
             else:
-                img_data = requests.get(thumbnail_url).content
-                with open(f"{image_save_location}{name}.jpg", "wb") as f:
-                    f.write(img_data)
+                if thumbnail_url:
+                    img_data = requests.get(thumbnail_url).content
+                    with open(f"{image_save_location}{name}.jpg", "wb") as f:
+                        f.write(img_data)
 
             image_to_write = f"{image_save_location}{name}.jpg"
 
@@ -261,8 +272,6 @@ for video in videos:
                     album_art = MP4Cover(f.read(), imageformat='MP4Cover.FORMAT_JPEG')
             except FileNotFoundError:
                 img_file_found = False
-                # If we don't find an image, use the thumbnail from youtube
-                pass
             else:
                 # Tag list: https://mutagen.readthedocs.io/en/latest/api/mp4.html
                 MP4File.tags['covr'] = [bytes(album_art)]
@@ -277,4 +286,6 @@ for video in videos:
 
             MP4File.tags['\xa9cmt'] = url
             MP4File.save(output_file)
-            print(f"Updated track '{output_file}'.")
+            print(f"  Wrote file '{output_file}'.")
+
+print("All done!")
