@@ -1,4 +1,4 @@
-pytube
+pytubefix
 requests
 imageio-ffmpeg
 mutagen

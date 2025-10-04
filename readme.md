@@ -8,9 +8,9 @@ Near line 46 you will see:
 
 ```
 # Configuration
-list_file = 'C:\\Users\\<Username>\\Desktop\\playlist.txt'  # Text file containing one YouTube URL per line
-audio_save_location = 'H:\\YT\\Music\\'   # Location where to save the processed tracks
-image_save_location = 'H:\\YT\\Artwork\\'   # Location where to save the downloaded album artwork
+list_file = '/path/to/playlist.txt'      # Text file containing one YouTube URL per line
+audio_save_location = '/path/to/audio'   # Location where to save the processed tracks
+image_save_location = '/path/to/images'  # Location where to save the downloaded album artwork
 keep_compilation_track = True
 ```
 
@@ -46,6 +46,7 @@ The script is very crude and works for what I need it to - so feel free to modif
 
 I found some really basic code on github that I could use to download video files from conferences so I figured out how to extract the audio so I could listen to them in the car.
 I then wanted to see how far I could go in terms of automating the splitting of file, tagging and downloading of image art was the last challenge!
+Also added support to get thumbnail if no suitable album art is found.
 
 Python is amazing!
 

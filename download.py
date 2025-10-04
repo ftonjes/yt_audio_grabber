@@ -8,10 +8,12 @@ import requests
 import imageio_ffmpeg
 import subprocess as sp
 import os
-from pytube import YouTube
+from pytubefix import YouTube
 from mutagen.mp4 import MP4, MP4Cover
-import pprint
+from io import BytesIO
+from pprint import pprint
 
+requests.packages.urllib3.disable_warnings()
 
 def extract_audio(original_file, file_to_write, start_position=0, end_position=1000000):
 
@@ -41,9 +43,9 @@ def extract_audio(original_file, file_to_write, start_position=0, end_position=1
 
 
 # Configuration
-list_file = 'C:\\Users\\<Username>\\Desktop\\playlist.txt'  # Text file containing one YouTube URL per line
-audio_save_location = 'H:\\YT\\Music\\'   # Location where to save the processed tracks
-image_save_location = 'H:\\YT\\Artwork\\'   # Location where to save the downloaded album artwork
+list_file = '/Volumes/Data/Projects/yt_audio_grabber/playlist.txt'  # Text file containing one YouTube URL per line
+audio_save_location = '/Volumes/Data/Projects/yt_audio_grabber/music/'   # Location where to save the processed tracks
+image_save_location = '/Volumes/Data/Projects/yt_audio_grabber/artwork/'   # Location where to save the downloaded album artwork
 keep_compilation_track = True
 
 # Check if save locations exist and create if required:
@@ -71,28 +73,35 @@ for video in videos:
 
         # Download HTML from YouTube so track info can be found in the code:
         url = tmp.group(2)
-        wp = requests.get(url)
+        wp = requests.get(url, verify=False)
 
         # Get title of song:
         name = tmp.group(1).strip()
         if len(tmp.group(1)) == 0:
             tmp = re.search(
-                r'{"playerOverlayVideoDetailsRenderer":{"title":{"simpleText":"(.*)"},"subtitle"', wp.text)
+                r'{"playerOverlayVideoDetailsRenderer":{"title":{"simpleText":"(.*?)"},"subtitle"', wp.text)
             if tmp:
                 print(f"Video title: '{tmp.group(1)}'")
                 name = tmp.group(1).strip()
 
+        # Get Thumbnail image URL
+        thumbnail_url = False
+        tmp = re.search(r'"thumbnailUrl":"(https://.*?maxres.*?)"', wp.text)
+        if tmp:
+            thumbnail_url = tmp.group(1)
+
         # Clean the name so it looks cleaner (including phrases or single characters)
         clean = [
             '/', ' (Official Music Video)', ' (Official Video)', 'Official Video',
-            ' [Official Music Video]', ' [FULL ALBUM]', ' (FULL ALBUM)', '  [FULL ALBUM - OUT NOW]', ' [FULL SET]',
-            ' (FULL SET)', ' FULL SET'
+            ' [Official Music Video]', ' [Official Music Video]', ' [FULL ALBUM]', ' (FULL ALBUM)',
+            '  [FULL ALBUM - OUT NOW]', ' [FULL SET]',' (FULL SET)', ' FULL SET', ' 4K',
+            ' [official music video]', '[Music Video]',
         ]
 
         for item in clean:
             name = name.replace(item, '').strip()
         name = name.replace('|', '-').replace('｜', ' - ').replace(':', ',').replace(
-            '\\u0026', '&').replace(' VOL. ', ' VOL ')
+            '\\u0026', '&').replace(' VOL. ', ' VOL ').replace('  ', ' ')
         name = re.sub(r"\(VOL. (\d+)\)", 'VOL \\1', name)  # Remove full-stop from 'VOL. 1' ('VOL 1')
 
         # Check if the video has multiple tracks in one file and create a playlist with start/end times incl. track no
@@ -140,8 +149,7 @@ for video in videos:
                 if not os.path.exists(f"{image_save_location}{name}"):
                     os.makedirs(f"{image_save_location}{name}")
         output_file = f"{audio_save_location}{name}.mp4"
-        stream.download(filename=output_file)
-        print(f"Downloaded '{name}' at {stream.abr} (URL: '{url}').")
+        stream.download(output_path=audio_save_location, filename=f"{name}.mp4")
 
         # Split file into multiple if required:
         if len(playlist) > 0:
@@ -151,8 +159,8 @@ for video in videos:
                 item = playlist[items]
 
                 # Extract audio for this playlist item:
-                audio_to_write = f"{audio_save_location}{name}\\{item['title']}.mp4"
-                image_to_write = f"{image_save_location}{name}\\{item['title']}.jpg"
+                audio_to_write = f"{audio_save_location}{name}/{item['title']}.mp4"
+                image_to_write = f"{image_save_location}{name}/{item['title']}.jpg"
                 extract_audio(
                     original_file=output_file,
                     file_to_write=audio_to_write,
@@ -227,18 +235,24 @@ for video in videos:
             tmp = re.search(r'^(.*?) - (.*)$', name)
             if tmp:
                 cmd_to_run = (
-                    f'sacad "{tmp.group(1)}" "{tmp.group(2)}" 900 "{name}.jpg" -v quiet')
+                    f'sacad "{tmp.group(1)}" "{tmp.group(2)}" 900 "{image_save_location}{name}.jpg" -v quiet')
             else:
                 cmd_to_run = (
-                    f'sacad "{name}" "{name}" 900 "{name}.jpg" -v quiet')
+                    f'sacad "{name}" "{name}" 900 "{image_save_location}{name}.jpg" -v quiet')
 
             os.system(cmd_to_run)
-            cwd = os.getcwd()
 
-            image_to_write = f"{name}.jpg"
+            if os.path.isfile(f"{image_save_location}{name}.jpg"):
+                print('Found it')
+            else:
+                img_data = requests.get(thumbnail_url).content
+                with open(f"{image_save_location}{name}.jpg", "wb") as f:
+                    f.write(img_data)
 
-            # Now exit the downloaded MP4 song and add some tags and album artwork!
-            MP4File = MP4(output_file.replace("\\\\", "\\"))
+            image_to_write = f"{image_save_location}{name}.jpg"
+
+            # Now add some tags and album artwork!
+            MP4File = MP4(output_file)
             if not MP4File.tags:
                 MP4File.add_tags()
 
@@ -247,6 +261,7 @@ for video in videos:
                     album_art = MP4Cover(f.read(), imageformat='MP4Cover.FORMAT_JPEG')
             except FileNotFoundError:
                 img_file_found = False
+                # If we don't find an image, use the thumbnail from youtube
                 pass
             else:
                 # Tag list: https://mutagen.readthedocs.io/en/latest/api/mp4.html
