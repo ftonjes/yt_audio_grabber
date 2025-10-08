@@ -7,6 +7,7 @@ import re
 import requests
 import subprocess as sp
 import os
+import imageio_ffmpeg
 from pytubefix import YouTube
 from mutagen.mp4 import MP4, MP4Cover
 
@@ -23,7 +24,9 @@ def extract_audio(original_file, file_to_write, start_position=0, end_position=1
     :return: True
     """
 
-    ffmpeg_path = '/opt/homebrew/bin/ffmpeg'
+    ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+    # ffmpeg_path = '/opt/homebrew/bin/ffmpeg' # My homebrew is newer so I use this
+
     std_out = sp.run(
         [
             ffmpeg_path,
