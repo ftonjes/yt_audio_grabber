@@ -5,7 +5,6 @@
 """
 import re
 import requests
-import imageio_ffmpeg
 import subprocess as sp
 import os
 from pytubefix import YouTube
@@ -24,15 +23,15 @@ def extract_audio(original_file, file_to_write, start_position=0, end_position=1
     :return: True
     """
 
-    ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-    sp.run(
+    ffmpeg_path = '/opt/homebrew/bin/ffmpeg'
+    std_out = sp.run(
         [
             ffmpeg_path,
+            '-y',
             '-ss', str(start_position / 1000),
             '-to', str(end_position / 1000),
             '-i', original_file,
-            file_to_write,
-            '-y'
+            file_to_write
         ],
         stderr=sp.DEVNULL,
         stdout=sp.DEVNULL)
@@ -65,6 +64,7 @@ for video in videos:
     if video == ':STOP:':
         print("STOP FOUND!")
         exit()
+
     # Download file from YouTube:
     tmp = re.search(r'(.*?)(https://.*?)&?$', video)
     if tmp:
@@ -72,6 +72,15 @@ for video in videos:
         # Download HTML from YouTube so track info can be found in the code:
         url = tmp.group(2)
         wp = requests.get(url, verify=False)
+
+        with open('debug.html', 'wb') as f:
+            f.write(wp.content)
+
+        audio_length = 0  # length of track in milliseconds
+        tmpx = re.compile(r'},"approxDurationMs":"(\d+)"', re.MULTILINE | re.DOTALL)
+        for tmpy in re.findall(tmpx, wp.text):
+            if int(tmpy) > audio_length:
+                audio_length = int(tmpy)
 
         # Get title of song:
         name = tmp.group(1).strip()
@@ -81,7 +90,10 @@ for video in videos:
             if tmp:
                 name = tmp.group(1).strip().replace('|', '-').replace('｜', '-').replace(
                     ':', '').replace('\\u0026', '&')
-                print(f"Video title: '{name}'")
+                if name[-1] == '.':
+                    name = name[:-1]
+
+                print(f"Video title: '{name}' / {url}")
 
         # Get Thumbnail image URL
         thumbnail_url = False
@@ -121,6 +133,8 @@ for video in videos:
             if tmp:
                 title = tmp.group(1).replace('|', '-').replace('｜', '-').replace(
                     ':', '').replace('\\u0026', '&')
+                if title[-1] == '.':
+                    title = title[:-1]
 
             track_start = 0
             tmp = re.search(r',"timeRangeStartMillis":(\d+),', match)
@@ -148,6 +162,7 @@ for video in videos:
         # Download track and prepare directories if a compilation video is found:
         yt = YouTube(url)
         stream = yt.streams.filter(mime_type='audio/mp4').order_by('abr').desc().first()
+
         if len(playlist) > 0:
             if not os.path.exists(f"{audio_save_location}{name}"):
                 os.makedirs(f"{audio_save_location}{name}")
@@ -198,8 +213,15 @@ for video in videos:
                         f'"{image_save_location}{name}/{item["title"]}.jpg" -v quiet')
                 else:
                     cmd_to_run = (
-                        f'sacad -t 100 "{item["title"]}" "{name}" 1600 "{image_save_location}{name}{item["title"]}.jpg'
+                        f'sacad -t 100 "{item["title"]}" "{name}" 1600 "{image_save_location}{name}/{item["title"]}.jpg'
                         f'" -v quiet')
+
+                # If we don't find album art, use the thumbnail from youtube instead
+                if not os.path.isfile(f"{image_save_location}{name}/{item["title"]}.jpg"):
+                    if thumbnail_url:
+                        img_data = requests.get(thumbnail_url).content
+                        with open(f"{image_save_location}{name}/{item["title"]}.jpg", "wb") as f:
+                            f.write(img_data)
 
                 os.system(cmd_to_run)
 
@@ -256,9 +278,18 @@ for video in videos:
                 pass
             else:
                 if thumbnail_url:
+                    print(f"  Thumbnail URL: {thumbnail_url}")
                     img_data = requests.get(thumbnail_url).content
                     with open(f"{image_save_location}{name}.jpg", "wb") as f:
                         f.write(img_data)
+
+            # We need to overwrite old file as it has bad data that makes the track look twice as long as it is.
+            audio_to_write = f"{output_file}"
+            extract_audio(
+                original_file=output_file,
+                file_to_write=audio_to_write,
+                start_position=1,
+                end_position=audio_length)
 
             image_to_write = f"{image_save_location}{name}.jpg"
 
